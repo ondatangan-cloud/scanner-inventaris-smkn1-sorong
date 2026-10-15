@@ -1,0 +1,388 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pemindai QR Inventaris SMKN 1 Sorong</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      color: #172554;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .header {
+      padding: 24px;
+      color: white;
+      background: #102a56;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 22px;
+      margin: 0 0 8px;
+    }
+
+    .header p {
+      margin: 0;
+      line-height: 1.5;
+      color: #dbeafe;
+    }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 15px #0f172a12;
+    }
+
+    button {
+      border: 0;
+      border-radius: 9px;
+      padding: 12px 16px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .primary { background: #1d4ed8; color: white; }
+    .secondary { background: #e2e8f0; color: #172554; }
+    .danger { background: #b91c1c; color: white; }
+
+    #reader {
+      width: 100%;
+      max-width: 450px;
+      margin: 16px auto;
+    }
+
+    #status {
+      padding: 12px;
+      border-radius: 9px;
+      background: #eff6ff;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-row {
+      border-bottom: 1px solid #e2e8f0;
+      padding: 12px 0;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-row:last-child { border-bottom: 0; }
+
+    .detail-label {
+      color: #64748b;
+      display: block;
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .detail-value {
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .hidden { display: none; }
+
+    .note {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #64748b;
+    }
+  </style>
+</head>
+
+<body>
+<div class="container">
+
+  <header class="header">
+    <h1>SMK NEGERI 1 SORONG</h1>
+    <p>Pemindai QR Code Inventaris Sarana dan Prasarana</p>
+  </header>
+
+  <section class="card">
+    <h2>📷 Pemindai QR Aset</h2>
+    <p class="note">
+      Izinkan akses kamera saat browser meminta izin.
+      Arahkan kamera ke QR Code pada label inventaris.
+    </p>
+
+    <div id="status" role="status" aria-live="polite">
+      Siap. Tekan tombol untuk mengaktifkan kamera.
+    </div>
+
+    <button id="btnMulai" class="primary" onclick="mulaiScan()">
+      Buka Kamera Pemindai
+    </button>
+
+    <button id="btnTutup" class="danger hidden" onclick="tutupScan()">
+      Tutup Kamera
+    </button>
+
+    <div id="reader"></div>
+  </section>
+
+  <section class="card">
+    <h2>📦 Hasil Pemindaian</h2>
+    <div id="hasil">
+      <p class="note">
+        Data aset akan muncul setelah QR berhasil dipindai
+        dan kode ditemukan di Google Sheets.
+      </p>
+    </div>
+    <button class="secondary" onclick="bersihkanHasil()">
+      Bersihkan Hasil
+    </button>
+  </section>
+
+  <p class="note">
+    Sistem Inventaris Sekolah · SMKN 1 Sorong
+  </p>
+</div>
+
+<script>
+  // WAJIB diganti dengan URL Web App Apps Script Anda yang berakhiran /exec.
+  
+const API_URL = 'https://script.google.com/macros/s/AKfycbxJ7EBjtq_H4VyUBkUVEX6DdQHN9LXIKd0ARilXp1ru5uRkLqgaQbr_6C-APc-NRNjf/exec';
+
+
+  let scanner = null;
+  let sedangMemproses = false;
+  let scriptPermintaan = null;
+
+  const statusEl = document.getElementById('status');
+  const hasilEl = document.getElementById('hasil');
+  const btnMulai = document.getElementById('btnMulai');
+  const btnTutup = document.getElementById('btnTutup');
+
+  function setStatus(pesan) {
+    statusEl.textContent = pesan;
+  }
+
+  async function mulaiScan() {
+    if (API_URL.indexOf('/exec') === -1) {
+      setStatus('Konfigurasi belum benar. Isi API_URL dengan URL Apps Script /exec.');
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      setStatus('Halaman bukan konteks aman. Buka situs HTTPS GitHub Pages.');
+      return;
+    }
+
+    if (!navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia) {
+      setStatus('Browser tidak mendukung akses kamera. Gunakan Chrome terbaru.');
+      return;
+    }
+
+    if (typeof Html5Qrcode === 'undefined') {
+      setStatus('Pustaka pemindai gagal dimuat. Periksa koneksi internet.');
+      return;
+    }
+
+    if (scanner) {
+      return;
+    }
+
+    try {
+      sedangMemproses = false;
+      scanner = new Html5Qrcode('reader');
+
+      btnMulai.classList.add('hidden');
+      btnTutup.classList.remove('hidden');
+
+      setStatus('Meminta izin kamera. Silakan tunggu...');
+
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1
+        },
+        async function(decodedText) {
+          if (sedangMemproses) return;
+
+          sedangMemproses = true;
+          setStatus('QR terdeteksi: ' + decodedText);
+
+          await tutupScan();
+          cariDataAset(decodedText.trim());
+        },
+        function() {
+          // Frame tanpa QR diabaikan.
+        }
+      );
+
+      setStatus('Kamera aktif. Arahkan ke QR Code aset.');
+    } catch (err) {
+      console.error(err);
+
+      try {
+        if (scanner) await scanner.clear();
+      } catch (e) {}
+
+      scanner = null;
+      btnMulai.classList.remove('hidden');
+      btnTutup.classList.add('hidden');
+
+      if (err.name === 'NotAllowedError' ||
+          err.name === 'PermissionDeniedError') {
+        setStatus(
+          'Akses kamera ditolak. Izinkan kamera pada pengaturan situs browser, ' +
+          'kemudian muat ulang halaman.'
+        );
+      } else if (err.name === 'NotFoundError') {
+        setStatus('Kamera tidak ditemukan pada perangkat.');
+      } else if (err.name === 'NotReadableError') {
+        setStatus('Kamera sedang digunakan aplikasi lain.');
+      } else {
+        setStatus('Kamera gagal dibuka: ' + (err.message || err));
+      }
+    }
+  }
+
+  async function tutupScan() {
+    if (scanner) {
+      try {
+        await scanner.stop();
+      } catch (e) {
+        console.warn('Scanner sudah berhenti atau belum aktif.', e);
+      }
+
+      try {
+        await scanner.clear();
+      } catch (e) {}
+
+      scanner = null;
+    }
+
+    btnMulai.classList.remove('hidden');
+    btnTutup.classList.add('hidden');
+  }
+
+  function cariDataAset(kode) {
+    if (!kode) {
+      setStatus('Kode QR kosong.');
+      sedangMemproses = false;
+      return;
+    }
+
+    if (scriptPermintaan) {
+      scriptPermintaan.remove();
+    }
+
+    setStatus('Mencari aset ' + kode + ' di Google Sheets...');
+
+    window.handleInventarisResponse = function(response) {
+      sedangMemproses = false;
+
+      if (scriptPermintaan) {
+        scriptPermintaan.remove();
+        scriptPermintaan = null;
+      }
+
+      if (!response || !response.success) {
+        setStatus(
+          response && response.message
+            ? response.message
+            : 'Gagal mendapatkan data dari server.'
+        );
+        return;
+      }
+
+      tampilkanAset(response.asset);
+      setStatus('Data aset berhasil ditemukan.');
+    };
+
+    const url = API_URL
+      + '?api=asset'
+      + '&kode=' + encodeURIComponent(kode)
+      + '&callback=handleInventarisResponse'
+      + '&_=' + Date.now();
+
+    scriptPermintaan = document.createElement('script');
+    scriptPermintaan.src = url;
+
+    scriptPermintaan.onerror = function() {
+      sedangMemproses = false;
+      setStatus(
+        'Gagal menghubungi Apps Script. Periksa URL, deployment, ' +
+        'dan izin akses endpoint.'
+      );
+      scriptPermintaan = null;
+    };
+
+    document.body.appendChild(scriptPermintaan);
+  }
+
+  function tampilkanAset(aset) {
+    hasilEl.replaceChildren();
+
+    const daftar = [
+      ['Kode Inventaris', aset.kode],
+      ['Nama Barang', aset.nama],
+      ['Kategori', aset.kategori],
+      ['Merk / Spesifikasi', aset.merk],
+      ['Lokasi', aset.lokasi],
+      ['Kondisi', aset.kondisi]
+    ];
+
+    daftar.forEach(function(item) {
+      const row = document.createElement('div');
+      row.className = 'detail-row';
+
+      const label = document.createElement('span');
+      label.className = 'detail-label';
+      label.textContent = item[0];
+
+      const value = document.createElement('span');
+      value.className = 'detail-value';
+      value.textContent = item[1] || '-';
+
+      row.appendChild(label);
+      row.appendChild(value);
+      hasilEl.appendChild(row);
+    });
+  }
+
+  function bersihkanHasil() {
+    hasilEl.replaceChildren();
+
+    const pesan = document.createElement('p');
+    pesan.className = 'note';
+    pesan.textContent = 'Belum ada hasil pemindaian.';
+    hasilEl.appendChild(pesan);
+
+    setStatus('Siap memindai aset berikutnya.');
+    sedangMemproses = false;
+  }
+
+  window.addEventListener('beforeunload', function() {
+    if (scanner) {
+      scanner.stop().catch(function() {});
+    }
+  });
+</script>
+</body>
+</html>
+
